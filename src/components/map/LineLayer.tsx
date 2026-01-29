@@ -4,12 +4,14 @@ import React from 'react';
 import { Layer, Line } from 'react-konva';
 import { useMapStore } from '@/store/mapStore';
 
-export const LineLayer = () => {
+import { LineData } from '@/types/p2p';
+
+interface LineLayerProps {
+    currentLine: LineData | null;
+}
+
+export const LineLayer = ({ currentLine }: LineLayerProps) => {
     const lines = useMapStore((state) => state.lines);
-    // Also need to show "currently drawing line" if we want local feedback?
-    // Local drawing state will be in MapCanvas usually or passed here.
-    // Let's assume MapCanvas handles the "preview" line on a separate temp layer or same layer.
-    // This layer is for COMMITTED lines.
 
     return (
         <Layer>
@@ -22,9 +24,20 @@ export const LineLayer = () => {
                     tension={0.5}
                     lineCap="round"
                     lineJoin="round"
-                    listening={false} // Lines don't catch events for now
+                    listening={false}
                 />
             ))}
+            {currentLine && (
+                <Line
+                    points={currentLine.points}
+                    stroke={currentLine.color}
+                    strokeWidth={currentLine.strokeWidth}
+                    tension={0.5}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                />
+            )}
         </Layer>
     );
 };

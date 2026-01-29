@@ -10,7 +10,8 @@ export const MapControls = () => {
     const {
         image, imageSize, pins, importData, clearMap, role, permissionStatus, permissionExpiresAt, sendRequest,
         toolMode, setToolMode, penColor, setPenConfig, penWidth, undoLine,
-        pinScale, setPinScale, triggerImageExport, fitToScreen
+        pinScale, setPinScale, triggerImageExport, fitToScreen,
+        setPermissionStatus, setPermissionExpiresAt // Added
     } = useMapStore();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -18,21 +19,31 @@ export const MapControls = () => {
 
     // Timer logic
     useEffect(() => {
-        if (permissionStatus !== 'GRANTED' || !permissionExpiresAt) {
+        const isActive = permissionStatus === 'GRANTED' || permissionStatus === 'COOLDOWN';
+
+        if (!isActive || !permissionExpiresAt) {
             setTimeLeft(0);
             return;
         }
+
         const interval = setInterval(() => {
             const seconds = Math.ceil((permissionExpiresAt - Date.now()) / 1000);
+
             if (seconds <= 0) {
                 setTimeLeft(0);
                 clearInterval(interval);
+
+                // If cooldown expired, reset to allow re-request
+                if (permissionStatus === 'COOLDOWN') {
+                    setPermissionStatus('NONE');
+                    setPermissionExpiresAt(null);
+                }
             } else {
                 setTimeLeft(seconds);
             }
         }, 1000);
         return () => clearInterval(interval);
-    }, [permissionStatus, permissionExpiresAt]);
+    }, [permissionStatus, permissionExpiresAt, setPermissionStatus, setPermissionExpiresAt]);
 
 
     const handleExportJSON = () => {
@@ -128,6 +139,11 @@ export const MapControls = () => {
                         <Button variant="secondary" disabled className="gap-2">
                             <Loader2 className="h-4 w-4 animate-spin" />
                             申請中...
+                        </Button>
+                    ) : permissionStatus === 'COOLDOWN' ? (
+                        <Button variant="destructive" disabled className="gap-2 bg-red-100 text-red-600 border border-red-200">
+                            <Timer className="h-4 w-4" />
+                            再申請まで {timeLeft}s
                         </Button>
                     ) : (
                         <Button onClick={handleRequestPermission} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">

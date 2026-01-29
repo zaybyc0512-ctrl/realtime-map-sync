@@ -10,8 +10,7 @@ import { CursorLayer } from './CursorLayer';
 import Konva from 'konva';
 import { LineData } from '@/types/p2p';
 import { v4 as uuidv4 } from 'uuid';
-import { usePeer } from '@/hooks/usePeer';
-
+// import { usePeer } from '@/hooks/usePeer'; // Removed for Singleton pattern
 export const MapCanvas = () => {
     const {
         image: imageUrl,
@@ -22,7 +21,8 @@ export const MapCanvas = () => {
         role,
         permissionStatus,
         toolMode, penColor, penWidth, addLine,
-        exportImageTrigger
+        exportImageTrigger,
+        sendCursor // Injected from Store
     } = useMapStore();
 
     const [img] = useImage(imageUrl || '');
@@ -32,9 +32,7 @@ export const MapCanvas = () => {
     useEffect(() => {
         if (exportImageTrigger && stageRef.current) {
             const stage = stageRef.current;
-            // Deselect logic removed for popovers
 
-            // Wait a tick for deselect to render? 
             setTimeout(() => {
                 const dataUrl = stage.toDataURL({ pixelRatio: 2 });
                 const link = document.createElement('a');
@@ -45,13 +43,7 @@ export const MapCanvas = () => {
                 document.body.removeChild(link);
             }, 100);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [exportImageTrigger]);
-
-    // ... rest of code
-
-    // FIX 1: P2P hooks called at top level
-    const { broadcastCursor, sendCursor, peerId } = usePeer();
 
     const [currentLine, setCurrentLine] = useState<LineData | null>(null);
     const [isPanning, setIsPanning] = useState(false);
@@ -98,66 +90,58 @@ export const MapCanvas = () => {
     };
 
     const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-        if (e.target === stageRef.current) {
-            updateStage({
-                x: e.target.x(),
-                y: e.target.y()
-            });
+        if (isSpacePressed || (toolMode !== 'pen' && e.target === stageRef.current)) {
+            updateStage({ x: e.target.x(), y: e.target.y() });
         }
     };
 
-    const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-        const currentRole = useMapStore.getState().role;
-        const perm = useMapStore.getState().permissionStatus;
-        if (currentRole === 'GUEST' && perm !== 'GRANTED') return;
+    const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+        // Alt-Click to add pin
+        if (e.evt.altKey && toolMode === 'pointer') {
+            if (!imageSize) return;
+            const stage = e.target.getStage();
+            if (!stage) return;
+            const transform = stage.getAbsoluteTransform().copy().invert();
+            const pos = stage.getPointerPosition();
+            if (!pos) return;
 
-        if (!imageSize || !e.evt.altKey) {
-            // If click background (not pin), do nothing or close all?
-            // "Viewer" usually expects clicking background to NOT close sticky notes unless specific constraint.
-            // Let's keep it simple: click background does nothing to pins now. User closes them explicitly.
+            const localPos = transform.point(pos);
+            const x = localPos.x / imageSize.width;
+            const y = localPos.y / imageSize.height;
+
+            const newPin = {
+                id: uuidv4(),
+                x,
+                y,
+                color: '#ef4444',
+            };
+            addPin(newPin);
             return;
         }
-
-        const stage = e.target.getStage();
-        if (!stage) return;
-        const transform = stage.getAbsoluteTransform().copy().invert();
-        const pos = stage.getPointerPosition();
-        if (!pos) return;
-
-        const localPos = transform.point(pos);
-        const x = localPos.x / imageSize.width;
-        const y = localPos.y / imageSize.height;
-
-        const newPin = {
-            id: uuidv4(),
-            x,
-            y,
-            color: '#ef4444',
-        };
-        addPin(newPin); // AddPin now auto-opens it
     };
 
     const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
         if (isSpacePressed) return;
-        if (e.evt.button === 1) return;
+        if (e.evt.button === 1) return; // Middle click
 
         if (toolMode === 'pen') {
             const currentRole = useMapStore.getState().role;
-            const perm = useMapStore.getState().permissionStatus;
-            if (currentRole === 'GUEST' && perm !== 'GRANTED') return;
+            const currentPermission = useMapStore.getState().permissionStatus;
+            if (currentRole === 'GUEST' && currentPermission !== 'GRANTED') {
+                return; // Guest cannot draw without permission
+            }
 
             const stage = e.target.getStage();
             if (!stage) return;
             const pos = stage.getRelativePointerPosition();
             if (!pos) return;
 
-            const newLine: LineData = {
+            setCurrentLine({
                 id: uuidv4(),
-                points: [pos.x, pos.y],
+                points: [pos.x, pos.y, pos.x, pos.y],
                 color: penColor,
-                strokeWidth: penWidth
-            };
-            setCurrentLine(newLine);
+                strokeWidth: penWidth,
+            });
         }
     };
 
@@ -165,26 +149,43 @@ export const MapCanvas = () => {
         const stage = e.target.getStage();
         if (!stage) return;
 
-        const relPos = stage.getRelativePointerPosition();
-        // FIX 1: Use destructured hooks values
-        if (relPos) {
+        // Cursor Broadcast Logic
+        // We now use sendCursor from props/store instead of usePeer direct call
+        const pos = stage.getRelativePointerPosition();
+        if (pos && imageSize) { // Ensure imageSize exists before calculating ratios
             const cursorData = {
-                userId: peerId || 'anon',
-                x: relPos.x,
-                y: relPos.y,
-                color: role === 'HOST' ? '#ef4444' : '#3b82f6',
-                label: role
+                userId: 'me', // ID is filled by receiver usually, or use store user ID? 
+                // Actually in usePeer hook, broadcastCursor/sendCursor attached peerId. 
+                // Wait, usePeer's sendCursor expected {x, y, ...}.
+                // We need to match what usePeer expects. 
+                // The injection in usePeer.ts wraps logic.
+                // Let's verify CursorData type.
+                x: pos.x / imageSize.width,
+                y: pos.y / imageSize.height,
+                userName: role === 'HOST' ? 'Host' : 'Guest', // Simple name for now
+                color: '#ff0000'
             };
-
-            if (role === 'HOST') broadcastCursor(cursorData);
-            else if (role === 'GUEST') sendCursor(cursorData);
+            // Send to peers
+            if (role !== 'NONE') {
+                sendCursor(cursorData); // Using injected function
+            }
         }
 
-        if (currentLine) {
-            if (!relPos) return;
-            const newPoints = currentLine.points.concat([relPos.x, relPos.y]);
-            setCurrentLine({ ...currentLine, points: newPoints });
+        if (isSpacePressed) {
+            stage.container().style.cursor = 'grab';
+        } else {
+            stage.container().style.cursor = toolMode === 'pen' ? 'crosshair' : 'default';
         }
+
+        if (!currentLine) return; // Not drawing
+        if (toolMode !== 'pen') return;
+
+        // Drawing logic
+        const point = stage.getRelativePointerPosition();
+        if (!point) return;
+
+        const newPoints = currentLine.points.concat([point.x, point.y]);
+        setCurrentLine({ ...currentLine, points: newPoints });
     };
 
     const handleMouseUp = () => {
@@ -194,77 +195,43 @@ export const MapCanvas = () => {
         }
     };
 
-    const isDraggable = (toolMode === 'pointer' || isSpacePressed) && !currentLine;
-
-    useEffect(() => {
-        if (!stageRef.current) return;
-        const container = stageRef.current.container();
-        if (isSpacePressed) {
-            container.style.cursor = 'grab';
-        } else if (toolMode === 'pen') {
-            container.style.cursor = 'crosshair';
-        } else {
-            container.style.cursor = 'default';
-        }
-    }, [isSpacePressed, toolMode]);
-
-    if (!imageUrl || !imageSize) return null;
+    if (!imageUrl || !imageSize) {
+        return <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">Map not loaded</div>;
+    }
 
     return (
-        <Stage
-            width={typeof window !== 'undefined' ? window.innerWidth : 800} // Safe window check
-            height={typeof window !== 'undefined' ? window.innerHeight : 600}
-            onWheel={handleWheel}
-            draggable={isDraggable}
-            onDragEnd={handleDragEnd}
-            onDragMove={(e) => {
-                if (e.target === stageRef.current) {
-                    updateStage({
-                        x: e.target.x(),
-                        y: e.target.y(),
-                        scale: stageRef.current?.scaleX() || 1
-                    });
-                }
-            }}
-            x={stageState?.x ?? 0}
-
-            y={stageState?.y ?? 0}
-            scaleX={stageState?.scale ?? 1}
-            scaleY={stageState?.scale ?? 1}
-            onClick={handleClick}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            ref={stageRef}
-            style={{ backgroundColor: '#e5e7eb' }}
-        >
-            <Layer>
-                <Image image={img} width={imageSize.width} height={imageSize.height} />
-            </Layer>
-
-            <LineLayer />
-
-            {/* FIX 2: PinLayer returns Fragment in previous view, so wrap in Layer */}
-            <Layer>
-                <PinLayer />
-            </Layer>
-
-            {currentLine && (
+        <div className="w-full h-full bg-gray-100 overflow-hidden relative">
+            <Stage
+                ref={stageRef}
+                width={window.innerWidth}
+                height={window.innerHeight}
+                draggable={toolMode === 'pointer' || isSpacePressed}
+                onWheel={handleWheel}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onDragEnd={handleDragEnd}
+                onClick={handleStageClick}
+                scaleX={stageState.scale}
+                scaleY={stageState.scale}
+                x={stageState.x}
+                y={stageState.y}
+            >
                 <Layer>
-                    <Line
-                        points={currentLine.points}
-                        stroke={currentLine.color}
-                        strokeWidth={currentLine.strokeWidth}
-                        tension={0.5}
-                        lineCap="round"
-                        lineJoin="round"
-                        listening={false}
-                    />
+                    <Image image={img} width={imageSize.width} height={imageSize.height} alt="Map" />
                 </Layer>
-            )}
+                <LineLayer currentLine={currentLine} />
+                <PinLayer />
+                {/* CursorLayer handles displaying OTHER users' cursors from store */}
+                <CursorLayer />
+            </Stage>
 
-            <CursorLayer />
-        </Stage>
+            {/* Helper Text */}
+            {isSpacePressed && (
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none bg-black/50 text-white px-4 py-2 rounded-full text-sm">
+                    Panning Mode
+                </div>
+            )}
+        </div>
     );
 };

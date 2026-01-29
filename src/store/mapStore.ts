@@ -37,11 +37,16 @@ interface MapState {
   role: 'HOST' | 'GUEST' | 'NONE';
 
   // Permission State
-  permissionStatus: 'NONE' | 'REQUESTING' | 'GRANTED';
+  permissionStatus: 'NONE' | 'REQUESTING' | 'GRANTED' | 'COOLDOWN';
   permissionExpiresAt: number | null;
+  hostSettings: { // Added
+    permissionDuration: number;
+    reapplyCooldown: number;
+  };
 
   // Dependency injection for P2P
   sendRequest: (action: 'ADD_PIN' | 'UPDATE_PIN' | 'DELETE_PIN' | 'REQUEST_PERMISSION' | 'ADD_LINE' | 'UNDO_LINE', data?: any) => void;
+  sendCursor: (data: CursorData) => void; // Added for Singleton fix
 
   // Actions
   setImage: (image: string, size: ImageSize) => void;
@@ -65,13 +70,15 @@ interface MapState {
   setPinScale: (scale: number) => void; // Added
   triggerImageExport: () => void; // Added
   fitToScreen: (containerWidth: number, containerHeight: number) => void; // Added Phase 10
+  setHostSettings: (settings: Partial<{ permissionDuration: number; reapplyCooldown: number; }>) => void; // Added
 
   clearMap: () => void;
   setHasHydrated: (state: boolean) => void;
   setRole: (role: 'HOST' | 'GUEST' | 'NONE') => void;
-  setPermissionStatus: (status: 'NONE' | 'REQUESTING' | 'GRANTED') => void;
+  setPermissionStatus: (status: 'NONE' | 'REQUESTING' | 'GRANTED' | 'COOLDOWN') => void;
   setPermissionExpiresAt: (time: number | null) => void;
   setSendRequest: (fn: (action: 'ADD_PIN' | 'UPDATE_PIN' | 'DELETE_PIN' | 'REQUEST_PERMISSION' | 'ADD_LINE' | 'UNDO_LINE', data?: any) => void) => void;
+  setSendCursor: (fn: (data: CursorData) => void) => void; // Added for Singleton fix
 
   importData: (data: { image: string | null; imageSize: ImageSize | null; pins: Pin[]; lines: LineData[] }) => void;
 }
@@ -108,7 +115,9 @@ export const useMapStore = create<MapState>()(
       role: 'NONE',
       permissionStatus: 'NONE',
       permissionExpiresAt: null,
+      hostSettings: { permissionDuration: 60, reapplyCooldown: 10 }, // Default initialization
       sendRequest: () => { },
+      sendCursor: () => { }, // Added
 
       setImage: (image, size) => set({ image, imageSize: size, pins: [], lines: [], stage: { scale: 1, x: 0, y: 0 } }),
 
@@ -117,8 +126,11 @@ export const useMapStore = create<MapState>()(
           stage: { ...state.stage, ...newStage }
         })),
 
+      // ... (middle parts unchanged, we need to correctly target this block)
+
       addPin: (pin) => {
         const state = get();
+        // ... Check role ...
         if (state.role === 'GUEST') {
           state.sendRequest('ADD_PIN', pin);
           return;
@@ -128,6 +140,10 @@ export const useMapStore = create<MapState>()(
           openPinIds: [...state.openPinIds, pin.id]
         }));
       },
+
+      // We can't replace the HUGE block easily without issues. 
+      // Let me try targeting just the initialization block first.
+
 
       removePin: (id) => {
         const state = get();
@@ -224,6 +240,10 @@ export const useMapStore = create<MapState>()(
         return { stage: { scale, x, y } };
       }),
 
+      setHostSettings: (updates) => set((state) => ({
+        hostSettings: { ...state.hostSettings, ...updates }
+      })),
+
       clearMap: () => set({ image: null, imageSize: null, pins: [], lines: [], stage: { scale: 1, x: 0, y: 0 }, openPinIds: [] }),
 
       importData: (data) => set({
@@ -239,6 +259,7 @@ export const useMapStore = create<MapState>()(
       setPermissionStatus: (status) => set({ permissionStatus: status }),
       setPermissionExpiresAt: (time) => set({ permissionExpiresAt: time }),
       setSendRequest: (fn) => set({ sendRequest: fn }),
+      setSendCursor: (fn) => set({ sendCursor: fn }), // Added
     }),
     {
       name: 'map-storage',

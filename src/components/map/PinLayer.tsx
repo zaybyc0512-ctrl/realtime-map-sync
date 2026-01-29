@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Path, Group } from 'react-konva';
+import { Path, Group, Layer } from 'react-konva';
 import { useMapStore } from '@/store/mapStore';
 
 // Lucide MapPin icon path data
@@ -15,7 +15,7 @@ export const PinLayer = () => {
     if (!imageSize) return null;
 
     return (
-        <>
+        <Layer>
             {pins.map((pin) => {
                 const x = pin.x * imageSize.width;
                 const y = pin.y * imageSize.height;
@@ -67,6 +67,6 @@ export const PinLayer = () => {
                     </Group>
                 );
             })}
-        </>
+        </Layer>
     );
 };

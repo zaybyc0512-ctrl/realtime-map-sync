@@ -1,4 +1,4 @@
-export type P2PActionType = 'SYNC_FULL' | 'SYNC_PINS' | 'REQUEST_OP' | 'REQUEST_PERMISSION' | 'PERMISSION_GRANTED' | 'PERMISSION_REVOKED' | 'CURSOR_MOVE' | 'SYNC_LINES';
+export type P2PActionType = 'SYNC_FULL' | 'SYNC_PINS' | 'REQUEST_OP' | 'REQUEST_PERMISSION' | 'PERMISSION_GRANTED' | 'PERMISSION_DENIED' | 'PERMISSION_REVOKED' | 'CURSOR_MOVE' | 'SYNC_LINES';
 
 export interface PinData {
     id: string;
@@ -57,8 +57,20 @@ export interface PermissionGrantedPayload {
     expiresAt: number; // Unix timestamp
 }
 
+// Payload for permission denied
+export interface PermissionDeniedPayload {
+    cooldown: number; // Seconds
+}
+
+export interface GuestInfo {
+    id: string;
+    label: string;
+    hasPermission: boolean;
+    permissionExpiresAt?: number;
+}
+
 export interface P2PPacket {
     type: P2PActionType;
     // Payload is optional because some types (REQUEST_PERMISSION, PERMISSION_REVOKED) don't need it
-    payload?: SyncFullPayload | SyncPinsPayload | RequestOpPayload | PermissionGrantedPayload | CursorData | SyncLinesPayload;
+    payload?: SyncFullPayload | SyncPinsPayload | RequestOpPayload | PermissionGrantedPayload | PermissionDeniedPayload | CursorData | SyncLinesPayload;
 }

@@ -4,8 +4,11 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // Added
+import { Settings } from 'lucide-react'; // Added icon
+import { useMapStore } from '@/store/mapStore'; // Added store
 import { Copy, Users, Link, ShieldAlert, ShieldCheck, ChevronUp, ChevronDown, X } from 'lucide-react';
-import { GuestInfo } from '@/hooks/usePeer';
+import { GuestInfo } from '@/types/p2p';
 
 interface ConnectionManagerProps {
     peerId: string | null;
@@ -69,10 +72,56 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({
     if (mode === 'NONE') {
         return (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
-                <Button onClick={handleStartHost} variant="secondary" className="shadow-md">
-                    <Users className="mr-2 h-4 w-4" />
-                    部屋を作成 (Host)
-                </Button>
+                <div className="flex gap-2 items-center">
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="secondary" size="icon" className="shadow-md" title="ホスト設定">
+                                <Settings className="h-4 w-4" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80">
+                            <div className="grid gap-4">
+                                <div className="space-y-2">
+                                    <h4 className="font-medium leading-none">ホスト設定</h4>
+                                    <p className="text-sm text-muted-foreground">
+                                        部屋の権限ルールを設定します。
+                                    </p>
+                                </div>
+                                <div className="grid gap-2">
+                                    <div className="grid grid-cols-3 items-center gap-4">
+                                        <Label htmlFor="duration">権限時間</Label>
+                                        <Input
+                                            id="duration"
+                                            type="number"
+                                            className="col-span-2 h-8"
+                                            defaultValue={useMapStore.getState().hostSettings.permissionDuration}
+                                            onChange={(e) => useMapStore.getState().setHostSettings({ permissionDuration: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-3 items-center gap-4">
+                                        <Label htmlFor="cooldown">再申請待機</Label>
+                                        <Input
+                                            id="cooldown"
+                                            type="number"
+                                            className="col-span-2 h-8"
+                                            defaultValue={useMapStore.getState().hostSettings.reapplyCooldown}
+                                            onChange={(e) => {
+                                                const val = Number(e.target.value);
+                                                useMapStore.getState().setHostSettings({ reapplyCooldown: Math.max(5, val) });
+                                            }}
+                                            min={5}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+
+                    <Button onClick={handleStartHost} variant="secondary" className="shadow-md">
+                        <Users className="mr-2 h-4 w-4" />
+                        部屋を作成 (Host)
+                    </Button>
+                </div>
                 <Button onClick={handleJoinGuest} variant="secondary" className="shadow-md">
                     <Link className="mr-2 h-4 w-4" />
                     部屋に参加 (Guest)
@@ -129,7 +178,7 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({
                         {/* Guest List */}
                         <div className="w-full flex flex-col gap-1 max-h-32 overflow-y-auto">
                             {guestList.map(guest => (
-                                <div key={guest.peerId} className="flex items-center justify-between text-xs bg-gray-50 p-1.5 rounded">
+                                <div key={guest.id} className="flex items-center justify-between text-xs bg-gray-50 p-1.5 rounded">
                                     <div className="flex items-center gap-1">
                                         <div className={`w-2 h-2 rounded-full ${guest.hasPermission ? 'bg-green-500' : 'bg-gray-400'}`} />
                                         <span className="font-mono">{guest.label}</span>
@@ -139,7 +188,7 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({
                                             variant="ghost"
                                             size="icon"
                                             className="h-5 w-5 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                            onClick={() => revokePermission(guest.peerId)}
+                                            onClick={() => revokePermission(guest.id)}
                                             title="権限剥奪"
                                         >
                                             <ShieldAlert className="h-3 w-3" />
