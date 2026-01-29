@@ -39,9 +39,10 @@ interface MapState {
   // Permission State
   permissionStatus: 'NONE' | 'REQUESTING' | 'GRANTED' | 'COOLDOWN';
   permissionExpiresAt: number | null;
-  hostSettings: { // Added
+  hostSettings: { // Added & Updated
     permissionDuration: number;
     reapplyCooldown: number;
+    guestEditMode: 'REQUEST' | 'FREE';
   };
 
   // Dependency injection for P2P
@@ -70,7 +71,7 @@ interface MapState {
   setPinScale: (scale: number) => void; // Added
   triggerImageExport: () => void; // Added
   fitToScreen: (containerWidth: number, containerHeight: number) => void; // Added Phase 10
-  setHostSettings: (settings: Partial<{ permissionDuration: number; reapplyCooldown: number; }>) => void; // Added
+  setHostSettings: (settings: Partial<{ permissionDuration: number; reapplyCooldown: number; guestEditMode: 'REQUEST' | 'FREE'; }>) => void; // Updated
 
   clearMap: () => void;
   setHasHydrated: (state: boolean) => void;
@@ -80,7 +81,7 @@ interface MapState {
   setSendRequest: (fn: (action: 'ADD_PIN' | 'UPDATE_PIN' | 'DELETE_PIN' | 'REQUEST_PERMISSION' | 'ADD_LINE' | 'UNDO_LINE', data?: any) => void) => void;
   setSendCursor: (fn: (data: CursorData) => void) => void; // Added for Singleton fix
 
-  importData: (data: { image: string | null; imageSize: ImageSize | null; pins: Pin[]; lines: LineData[] }) => void;
+  importData: (data: { image: string | null; imageSize: ImageSize | null; pins: Pin[]; lines: LineData[]; hostSettings?: any }) => void; // Updated
 }
 
 const storage = {
@@ -115,7 +116,7 @@ export const useMapStore = create<MapState>()(
       role: 'NONE',
       permissionStatus: 'NONE',
       permissionExpiresAt: null,
-      hostSettings: { permissionDuration: 60, reapplyCooldown: 10 }, // Default initialization
+      hostSettings: { permissionDuration: 60, reapplyCooldown: 10, guestEditMode: 'REQUEST' }, // Updated initialization
       sendRequest: () => { },
       sendCursor: () => { }, // Added
 
@@ -252,13 +253,14 @@ export const useMapStore = create<MapState>()(
 
       clearMap: () => set({ image: null, imageSize: null, pins: [], lines: [], stage: { scale: 1, x: 0, y: 0 }, openPinIds: [] }),
 
-      importData: (data) => set({
+      importData: (data) => set((state) => ({
         image: data.image,
         imageSize: data.imageSize,
         pins: data.pins,
         lines: data.lines || [],
-        stage: { scale: 1, x: 0, y: 0 }
-      }),
+        stage: { scale: 1, x: 0, y: 0 },
+        hostSettings: data.hostSettings ? data.hostSettings : state.hostSettings // Merge settings if present
+      })),
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
       setRole: (role) => set({ role }),

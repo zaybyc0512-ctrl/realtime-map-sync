@@ -1,4 +1,12 @@
-export type P2PActionType = 'SYNC_FULL' | 'SYNC_PINS' | 'REQUEST_OP' | 'REQUEST_PERMISSION' | 'PERMISSION_GRANTED' | 'PERMISSION_DENIED' | 'PERMISSION_REVOKED' | 'CURSOR_MOVE' | 'SYNC_LINES';
+export type P2PActionType = 'SYNC_FULL' | 'SYNC_PINS' | 'REQUEST_OP' | 'REQUEST_PERMISSION' | 'PERMISSION_GRANTED' | 'PERMISSION_DENIED' | 'PERMISSION_REVOKED' | 'CURSOR_MOVE' | 'SYNC_LINES' | 'SYNC_SETTINGS'; // Added SYNC_SETTINGS
+
+// Shared Host Settings Definition
+export interface HostSettings {
+    permissionDuration: number;
+    reapplyCooldown: number;
+    guestEditMode: 'REQUEST' | 'FREE';
+    // Removed allowGuestPointer
+}
 
 export interface PinData {
     id: string;
@@ -18,6 +26,12 @@ export interface SyncFullPayload {
     image: string | null;
     imageSize: ImageSize | null;
     pins: PinData[];
+    hostSettings: HostSettings; // Added
+}
+
+// Payload for settings sync
+export interface SyncSettingsPayload {
+    hostSettings: HostSettings;
 }
 
 // Payload for pin-only sync (Lightweight)
@@ -72,5 +86,5 @@ export interface GuestInfo {
 export interface P2PPacket {
     type: P2PActionType;
     // Payload is optional because some types (REQUEST_PERMISSION, PERMISSION_REVOKED) don't need it
-    payload?: SyncFullPayload | SyncPinsPayload | RequestOpPayload | PermissionGrantedPayload | PermissionDeniedPayload | CursorData | SyncLinesPayload;
+    payload?: SyncFullPayload | SyncPinsPayload | RequestOpPayload | PermissionGrantedPayload | PermissionDeniedPayload | CursorData | SyncLinesPayload | SyncSettingsPayload;
 }

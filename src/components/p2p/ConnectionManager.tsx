@@ -115,6 +115,21 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({
                                         />
                                     </div>
                                 </div>
+                                {/* Advanced Settings */}
+
+                                <div className="flex items-center justify-between space-x-2 pt-2 border-t">
+                                    <Label htmlFor="free-mode" className="flex flex-col space-y-1">
+                                        <span>フリー編集モード</span>
+                                        <span className="font-normal text-xs text-muted-foreground">全員に編集権限を付与 (申請不要)</span>
+                                    </Label>
+                                    <input
+                                        type="checkbox"
+                                        id="free-mode"
+                                        className="h-4 w-4"
+                                        checked={useMapStore.getState().hostSettings.guestEditMode === 'FREE'}
+                                        onChange={(e) => useMapStore.getState().setHostSettings({ guestEditMode: e.target.checked ? 'FREE' : 'REQUEST' })}
+                                    />
+                                </div>
                             </div>
                         </PopoverContent>
                     </Popover>
@@ -128,7 +143,7 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({
                     <Link className="mr-2 h-4 w-4" />
                     部屋に参加 (Guest)
                 </Button>
-            </div>
+            </div >
         );
     }
 

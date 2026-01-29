@@ -11,7 +11,7 @@ export const MapControls = () => {
         image, imageSize, pins, importData, clearMap, role, permissionStatus, permissionExpiresAt, sendRequest,
         toolMode, setToolMode, penColor, setPenConfig, penWidth, undoLine,
         pinScale, setPinScale, triggerImageExport, fitToScreen,
-        setPermissionStatus, setPermissionExpiresAt // Added
+        setPermissionStatus, setPermissionExpiresAt, hostSettings // Added
     } = useMapStore();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -20,6 +20,9 @@ export const MapControls = () => {
     // Timer logic
     useEffect(() => {
         const isActive = permissionStatus === 'GRANTED' || permissionStatus === 'COOLDOWN';
+        // Timer only matters if we are in REQUEST mode and have status. 
+        // If FREE mode, timer is irrelevant for permission, but maybe we shouldn't show it?
+        // Let's keep timer logic as is for specific permissions, even if free mode is on.
 
         if (!isActive || !permissionExpiresAt) {
             setTimeLeft(0);
@@ -117,14 +120,16 @@ export const MapControls = () => {
     };
 
     const isGuest = role === 'GUEST';
-    const canEdit = !isGuest || permissionStatus === 'GRANTED';
+    // Ensure hostSettings is available and valid
+    const isFreeMode = hostSettings?.guestEditMode === 'FREE';
+    const canEdit = !isGuest || permissionStatus === 'GRANTED' || isFreeMode;
 
     if (!image) return null;
 
     return (
         <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
-            {/* Permission Controls */}
-            {isGuest && (
+            {/* Permission Controls (Hide in Free Mode) */}
+            {isGuest && !isFreeMode && (
                 <div className="flex bg-white/90 p-2 rounded-lg shadow-md gap-2 backdrop-blur-sm mb-2">
                     {permissionStatus === 'GRANTED' ? (
                         <div className="flex items-center gap-2 text-green-600 font-bold px-2">
@@ -151,6 +156,16 @@ export const MapControls = () => {
                             編集リクエスト
                         </Button>
                     )}
+                </div>
+            )}
+
+            {/* Free Mode Indicator (Optional, but good for clarity) */}
+            {isGuest && isFreeMode && (
+                <div className="flex bg-green-50 p-2 rounded-lg shadow-md gap-2 backdrop-blur-sm mb-2 border border-green-200">
+                    <div className="flex items-center gap-2 text-green-700 font-bold px-2 text-sm">
+                        <Unlock className="h-4 w-4" />
+                        <span>フリー編集モード</span>
+                    </div>
                 </div>
             )}
 

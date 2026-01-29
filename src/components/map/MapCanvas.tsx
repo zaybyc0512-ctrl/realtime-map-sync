@@ -127,8 +127,10 @@ export const MapCanvas = () => {
         if (toolMode === 'pen') {
             const currentRole = useMapStore.getState().role;
             const currentPermission = useMapStore.getState().permissionStatus;
-            if (currentRole === 'GUEST' && currentPermission !== 'GRANTED') {
-                return; // Guest cannot draw without permission
+            const currentSettings = useMapStore.getState().hostSettings;
+
+            if (currentRole === 'GUEST' && currentPermission !== 'GRANTED' && currentSettings.guestEditMode !== 'FREE') {
+                return; // Guest cannot draw without permission (unless Free Mode)
             }
 
             const stage = e.target.getStage();
@@ -153,21 +155,21 @@ export const MapCanvas = () => {
         // We now use sendCursor from props/store instead of usePeer direct call
         const pos = stage.getRelativePointerPosition();
         if (pos && imageSize) { // Ensure imageSize exists before calculating ratios
-            const cursorData = {
-                userId: 'me', // ID is filled by receiver usually, or use store user ID? 
-                // Actually in usePeer hook, broadcastCursor/sendCursor attached peerId. 
-                // Wait, usePeer's sendCursor expected {x, y, ...}.
-                // We need to match what usePeer expects. 
-                // The injection in usePeer.ts wraps logic.
-                // Let's verify CursorData type.
-                x: pos.x / imageSize.width,
-                y: pos.y / imageSize.height,
-                userName: role === 'HOST' ? 'Host' : 'Guest', // Simple name for now
-                color: '#ff0000'
-            };
-            // Send to peers
-            if (role !== 'NONE') {
-                sendCursor(cursorData); // Using injected function
+            const { role, permissionStatus, hostSettings, sendCursor } = useMapStore.getState();
+
+            // Check if user is allowed to edit (Host, Granted, or Free Mode)
+            const canEdit = role === 'HOST' || permissionStatus === 'GRANTED' || hostSettings.guestEditMode === 'FREE';
+
+            // Only send if allowed (Editing)
+            if (role !== 'NONE' && canEdit) {
+                const cursorData = {
+                    userId: 'me', // ID is filled by receiver usually, but we keep this structure
+                    x: pos.x / imageSize.width,
+                    y: pos.y / imageSize.height,
+                    userName: role === 'HOST' ? 'Host' : 'Guest',
+                    color: '#ff0000',
+                };
+                sendCursor(cursorData);
             }
         }
 

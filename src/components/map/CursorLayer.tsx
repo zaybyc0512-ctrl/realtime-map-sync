@@ -20,6 +20,7 @@ export const CursorLayer = () => {
                         shadowColor="black"
                         shadowOpacity={0.3}
                     />
+
                     {cursor.label && (
                         <Text
                             text={cursor.label}

@@ -5,7 +5,7 @@ import { useMapStore } from '@/store/mapStore';
 import {
     P2PPacket, RequestOpPayload, SyncFullPayload, SyncPinsPayload,
     PermissionGrantedPayload, GuestInfo, CursorData, SyncLinesPayload,
-    PermissionDeniedPayload // Added
+    PermissionDeniedPayload, SyncSettingsPayload // Added
 } from '@/types/p2p';
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
@@ -37,7 +37,7 @@ export const usePeer = () => {
     // Handle Incoming Data
     const handleDataPacket = (packet: P2PPacket, conn: DataConnection) => {
         if (packet.type !== 'CURSOR_MOVE') {
-            console.log('Received Packet:', packet.type, packet.payload);
+            // console.debug('Received Packet:', packet.type, packet.payload);
         }
 
         switch (packet.type) {
@@ -47,7 +47,8 @@ export const usePeer = () => {
                     image: payload.image,
                     imageSize: payload.imageSize,
                     pins: payload.pins,
-                    lines: []
+                    lines: [],
+                    hostSettings: payload.hostSettings // Added fix
                 });
                 break;
             }
@@ -58,13 +59,20 @@ export const usePeer = () => {
                     image: useMapStore.getState().image,
                     imageSize: useMapStore.getState().imageSize,
                     pins: payload.pins,
-                    lines: useMapStore.getState().lines
+                    lines: useMapStore.getState().lines,
+                    // Preserve existing settings if not synced here
+                    hostSettings: useMapStore.getState().hostSettings
                 });
                 break;
             }
             case 'SYNC_LINES': {
                 const payload = packet.payload as SyncLinesPayload;
                 setLines(payload.lines);
+                break;
+            }
+            case 'SYNC_SETTINGS': { // Added
+                const payload = packet.payload as SyncSettingsPayload;
+                useMapStore.getState().setHostSettings(payload.hostSettings);
                 break;
             }
             case 'REQUEST_OP': {
@@ -159,19 +167,24 @@ export const usePeer = () => {
     }, [setGuestList]);
 
     const handleIncomingConnection = (conn: DataConnection) => {
-        console.log('Incoming connection:', conn.peer);
+        // console.debug('Incoming connection:', conn.peer);
         connectionsRef.current.push(conn);
         setConnectedGuests(prev => prev + 1);
         updateGuestList();
 
         conn.on('open', () => {
-            console.log('Connection opened:', conn.peer);
+            // console.debug('Connection opened:', conn.peer);
 
             // Sync Initial State
             const { image, imageSize, pins } = storeRef.current;
             const fullSync: P2PPacket = {
                 type: 'SYNC_FULL',
-                payload: { image, imageSize, pins }
+                payload: {
+                    image,
+                    imageSize,
+                    pins,
+                    hostSettings: useMapStore.getState().hostSettings // Added
+                }
             };
             conn.send(fullSync);
 
@@ -250,7 +263,7 @@ export const usePeer = () => {
         const payload: PermissionDeniedPayload = { cooldown };
         const packet: P2PPacket = { type: 'PERMISSION_DENIED', payload };
         conn.send(packet);
-        console.log(`Permission denied for ${conn.peer}, cooldown: ${cooldown}s`);
+        // console.debug(`Permission denied for ${conn.peer}, cooldown: ${cooldown}s`);
     };
 
     const revokePermissionInternal = (conn: DataConnection) => {
@@ -381,6 +394,22 @@ export const usePeer = () => {
         setSendRequest(requestAction);
         setSendCursor(sendCursor);
     }, [setSendRequest, requestAction, setSendCursor, sendCursor]);
+
+    // Sync Settings Hook
+    useEffect(() => {
+        if (role !== 'HOST') return;
+        if (connectionsRef.current.length === 0) return;
+
+        // Broadcast settings
+        const packet: P2PPacket = {
+            type: 'SYNC_SETTINGS',
+            payload: { hostSettings }
+        };
+
+        connectionsRef.current.forEach(conn => {
+            if (conn.open) conn.send(packet);
+        });
+    }, [hostSettings, role]);
 
     // Sync Hooks
     useEffect(() => {

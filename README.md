@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Realtime Map Sync
 
-## Getting Started
+A real-time collaborative map synchronization tool built with **Next.js**, **React Konva**, and **PeerJS**. Enables users to share map images and collaborate with pins, drawings, and cursors in real-time without a backend server (P2P).
 
-First, run the development server:
+## 🚀 Features
+
+### Core
+*   **P2P Connection**: Serverless architecture using PeerJS. Host creates a room, Guest joins via ID.
+*   **Map Sync**: Host's map image is automatically synchronized to Guests.
+*   **Persistence**: Map state is saved locally using IndexedDB (restores on reliability).
+
+### Collaboration
+*   **Pins (Sticky Notes)**: Place pins with text memos. Supports drag & drop and real-time updates.
+*   **Drawing (Pen Tool)**: Freehand drawing with customizable colors and widths.
+*   **Cursor Tracking**: See where other users are pointing in real-time.
+*   **Optimistic UI**: Instant feedback for local actions while syncing in background.
+
+### Permission System
+*   **Request/Approve**: Guests must request permission to edit.
+*   **Host Control**: Host can grant, deny, or revoke permissions.
+*   **Timeouts**: Permissions are granted for a specific duration (configurable) and automatically expire.
+
+## 🛠️ Tech Stack
+
+*   **Framework**: [Next.js](https://nextjs.org/) (App Router)
+*   **Canvas Library**: [React Konva](https://konvajs.org/docs/react/index.html)
+*   **P2P Networking**: [PeerJS](https://peerjs.com/)
+*   **State Management**: [Zustand](https://docs.pmnd.rs/zustand/getting-started/introduction) + [IDB-Keyval](https://github.com/jakearchibald/idb-keyval)
+*   **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [Shadcn/UI](https://ui.shadcn.com/)
+*   **Icons**: [Lucide React](https://lucide.dev/)
+
+## 📦 Getting Started
+
+### Prerequisites
+*   Node.js 18+
+
+### Installation
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Install dependencies
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Development Server
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Start the dev server
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-## Learn More
+## 📖 How to Use
 
-To learn more about Next.js, take a look at the following resources:
+### Basic Operations
+*   **Pan**: Drag screen or Space + Drag.
+*   **Zoom**: Mouse wheel.
+*   **Add Pin**: `Alt` + Click.
+*   **Edit Pin**: Click pin -> Click text bubble.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Host (Parent)
+1.  Click **"部屋を作成 (Host)"**.
+2.  Copy the **Peer ID** and share it with guests.
+3.  Approve permission requests from guests to allow them to edit.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Guest (Child)
+1.  Click **"部屋に参加 (Guest)"**.
+2.  Enter the Host's Peer ID.
+3.  Click the **Lock Icon** (top right) to request edit permission.
 
-## Deploy on Vercel
+## 🤝 Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📄 License
+MIT
