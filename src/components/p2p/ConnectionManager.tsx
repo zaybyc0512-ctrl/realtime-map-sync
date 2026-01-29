@@ -4,11 +4,12 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // Added
-import { Settings } from 'lucide-react'; // Added icon
-import { useMapStore } from '@/store/mapStore'; // Added store
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Settings } from 'lucide-react';
+import { useMapStore } from '@/store/mapStore';
 import { Copy, Users, Link, ShieldAlert, ShieldCheck, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { GuestInfo } from '@/types/p2p';
+import { HelpGuide } from '@/components/ui/HelpGuide'; // Added
 
 interface ConnectionManagerProps {
     peerId: string | null;
@@ -72,6 +73,7 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({
     if (mode === 'NONE') {
         return (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
+                <HelpGuide /> {/* Added Help Guide */}
                 <div className="flex gap-2 items-center">
                     <Popover>
                         <PopoverTrigger asChild>

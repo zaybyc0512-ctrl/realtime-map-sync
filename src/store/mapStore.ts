@@ -131,30 +131,31 @@ export const useMapStore = create<MapState>()(
       addPin: (pin) => {
         const state = get();
         // ... Check role ...
-        if (state.role === 'GUEST') {
-          state.sendRequest('ADD_PIN', pin);
-          return;
-        }
+        // 1. Optimistic Update
         set((state) => ({
           pins: [...state.pins, pin],
           openPinIds: [...state.openPinIds, pin.id]
         }));
+
+        // 2. Send Request if Guest
+        const { role, sendRequest } = get();
+        if (role === 'GUEST') {
+          sendRequest('ADD_PIN', pin);
+        }
       },
 
-      // We can't replace the HUGE block easily without issues. 
-      // Let me try targeting just the initialization block first.
-
-
       removePin: (id) => {
-        const state = get();
-        if (state.role === 'GUEST') {
-          state.sendRequest('DELETE_PIN', id);
-          return;
-        }
+        // 1. Optimistic Update
         set((state) => ({
           pins: state.pins.filter((p) => p.id !== id),
           openPinIds: state.openPinIds.filter((pid) => pid !== id)
         }));
+
+        // 2. Send Request if Guest
+        const { role, sendRequest } = get();
+        if (role === 'GUEST') {
+          sendRequest('DELETE_PIN', id);
+        }
       },
 
       updatePin: (id, updates) => {
@@ -164,14 +165,15 @@ export const useMapStore = create<MapState>()(
 
         const updatedPin = { ...targetPin, ...updates };
 
-        if (state.role === 'GUEST') {
-          state.sendRequest('UPDATE_PIN', updatedPin);
-          return;
-        }
-
+        // 1. Optimistic Update
         set((state) => ({
           pins: state.pins.map((p) => p.id === id ? updatedPin : p)
         }));
+
+        // 2. Send Request if Guest
+        if (state.role === 'GUEST') {
+          state.sendRequest('UPDATE_PIN', updatedPin);
+        }
       },
 
       togglePin: (id) => set((state) => {
@@ -193,24 +195,28 @@ export const useMapStore = create<MapState>()(
       }),
 
       addLine: (line) => {
-        const state = get();
-        if (state.role === 'GUEST') {
-          state.sendRequest('ADD_LINE', line);
-          return;
-        }
+        // 1. Optimistic Update
         set((state) => ({ lines: [...state.lines, line] }));
+
+        // 2. Send Request if Guest
+        const { role, sendRequest } = get();
+        if (role === 'GUEST') {
+          sendRequest('ADD_LINE', line);
+        }
       },
 
       undoLine: () => {
-        const state = get();
-        if (state.role === 'GUEST') {
-          state.sendRequest('UNDO_LINE');
-          return;
-        }
+        // 1. Optimistic Update
         set((state) => {
           if (state.lines.length === 0) return {};
           return { lines: state.lines.slice(0, -1) };
         });
+
+        // 2. Send Request if Guest
+        const { role, sendRequest } = get();
+        if (role === 'GUEST') {
+          sendRequest('UNDO_LINE');
+        }
       },
 
       setLines: (lines) => set({ lines }),

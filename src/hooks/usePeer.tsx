@@ -263,7 +263,7 @@ export const usePeer = () => {
         updateGuestList();
     };
 
-    const manualRevoke = (guestPeerId: string) => {
+    const revokePermission = (guestPeerId: string) => {
         const conn = connectionsRef.current.find(c => c.peer === guestPeerId);
         if (conn) {
             revokePermissionInternal(conn);
@@ -325,7 +325,9 @@ export const usePeer = () => {
             }
         }
 
-        console.log('requestAction called:', action, 'Connection Open:', conn?.open);
+        // console.debug('requestAction called:', action, 'Connection Open:', conn?.open);
+
+        // Optimistic Updates Removed (Moved to mapStore.ts to fix recursion)
 
         if (conn && conn.open) {
             let packet: P2PPacket;
@@ -355,7 +357,7 @@ export const usePeer = () => {
                 };
             }
             conn.send(packet);
-            console.log('Sent packet:', packet);
+            // console.debug('Sent packet:', packet);
         } else {
             console.error('No valid connection to host to send request.');
             toast.error('ホストとの接続が切れています。リロードしてください。');
@@ -427,7 +429,7 @@ export const usePeer = () => {
         requestAction,
         connectionState,
         connectedGuests,
-        manualRevoke,
+        revokePermission,
         guestList,
         broadcastCursor,
         sendCursor

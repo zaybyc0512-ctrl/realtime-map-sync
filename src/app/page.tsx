@@ -35,7 +35,7 @@ export default function Home() {
       <Toaster position="top-center" />
 
       {/* P2P UI Overlay */}
-      <ConnectionManager {...peer} />
+      <ConnectionManager {...peer} revokePermission={peer.revokePermission} />
 
       {/* Main Content */}
       {!image ? (
