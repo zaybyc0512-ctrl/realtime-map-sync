@@ -11,6 +11,7 @@ import { ConnectionManager } from '@/components/p2p/ConnectionManager';
 import { usePeer } from '@/hooks/usePeer';
 import { Loader2 } from 'lucide-react';
 import { Toaster } from '@/components/ui/sonner';
+import { SocialLinks } from '@/components/ui/SocialLinks';
 
 export default function Home() {
   const image = useMapStore((state) => state.image);
@@ -33,6 +34,7 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center justify-between relative">
       {/* Global Toaster for Notifications */}
       <Toaster position="top-center" />
+      <SocialLinks />
 
       {/* P2P UI Overlay */}
       <ConnectionManager {...peer} revokePermission={peer.revokePermission} />
