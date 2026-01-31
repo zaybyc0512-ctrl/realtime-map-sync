@@ -5,12 +5,19 @@ import { Layer, Circle, Text, Group } from 'react-konva';
 import { useMapStore } from '@/store/mapStore';
 
 export const CursorLayer = () => {
-    const cursors = useMapStore((state) => state.cursors);
+    const { cursors, imageSize } = useMapStore();
+
+    if (!imageSize) return null;
 
     return (
-        <Layer>
+        <Layer listening={false}>
             {Object.values(cursors).map((cursor) => (
-                <Group key={cursor.userId} x={cursor.x} y={cursor.y} listening={false}>
+                <Group
+                    key={cursor.userId}
+                    x={cursor.x * imageSize.width}
+                    y={cursor.y * imageSize.height}
+                    listening={false}
+                >
                     <Circle
                         radius={6}
                         fill={cursor.color || '#3b82f6'}

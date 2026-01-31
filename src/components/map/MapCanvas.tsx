@@ -147,6 +147,20 @@ export const MapCanvas = () => {
         }
     };
 
+    // Update cursor when toolMode changes or Space is pressed/released
+    useEffect(() => {
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        if (isSpacePressed) {
+            stage.container().style.cursor = 'grab';
+        } else if (toolMode === 'pointer') {
+            stage.container().style.cursor = 'default';
+        } else if (toolMode === 'pen') {
+            stage.container().style.cursor = 'crosshair';
+        }
+    }, [toolMode, isSpacePressed]);
+
     const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
         const stage = e.target.getStage();
         if (!stage) return;
@@ -175,9 +189,10 @@ export const MapCanvas = () => {
 
         if (isSpacePressed) {
             stage.container().style.cursor = 'grab';
-        } else {
-            stage.container().style.cursor = toolMode === 'pen' ? 'crosshair' : 'default';
+        } else if (toolMode === 'pen') {
+            stage.container().style.cursor = 'crosshair';
         }
+
 
         if (!currentLine) return; // Not drawing
         if (toolMode !== 'pen') return;
@@ -223,9 +238,11 @@ export const MapCanvas = () => {
                     <Image image={img} width={imageSize.width} height={imageSize.height} alt="Map" />
                 </Layer>
                 <LineLayer currentLine={currentLine} />
-                <PinLayer />
                 {/* CursorLayer handles displaying OTHER users' cursors from store */}
+                {/* Now placed below PinLayer to prevent blocking clicks, and listening={false} ensures passthrough */}
                 <CursorLayer />
+                {/* PinLayer is now top-most to ensure dragging works reliably */}
+                <PinLayer />
             </Stage>
 
             {/* Helper Text */}

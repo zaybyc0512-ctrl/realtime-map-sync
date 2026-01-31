@@ -1,43 +1,49 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import type { Peer, DataConnection } from 'peerjs';
 import { useMapStore } from '@/store/mapStore';
-// import { usePeerStore } from '@/store/peerStore'; // Removed
 import {
     P2PPacket, RequestOpPayload, SyncFullPayload, SyncPinsPayload,
     PermissionGrantedPayload, GuestInfo, CursorData, SyncLinesPayload,
-    PermissionDeniedPayload, SyncSettingsPayload // Added
+    PermissionDeniedPayload, SyncSettingsPayload
 } from '@/types/p2p';
 import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
 import { throttle } from 'lodash';
 
+// --- Singleton / Global State ---
+// This ensures connection state survives React component unmounts/remounts
+let globalPeer: Peer | null = null;
+let globalConnections: DataConnection[] = [];
+let globalActiveHostConnection: DataConnection | null = null;
+let globalPermissionTimers: Record<string, NodeJS.Timeout> = {};
+
 export const usePeer = () => {
-    const [peerId, setPeerId] = useState<string | null>(null);
+    // UI State (synced from global state)
+    const [peerId, setPeerId] = useState<string | null>(globalPeer?.id || null);
     const [connectionState, setConnectionState] = useState<'DISCONNECTED' | 'Connecting...' | 'Connected' | 'Error'>('DISCONNECTED');
-    const [connectedGuests, setConnectedGuests] = useState<number>(0);
+    const [connectedGuests, setConnectedGuests] = useState<number>(globalConnections.length);
     const [guestList, setGuestList] = useState<GuestInfo[]>([]);
 
     const {
-        image, imageSize, pins, lines,
         importData, addPin, updatePin, removePin, addLine, undoLine, updateCursor, setLines,
         setRole, role, setSendRequest, setSendCursor,
-        setPermissionStatus, setPermissionExpiresAt, hostSettings // Added
+        setPermissionStatus, setPermissionExpiresAt, hostSettings
     } = useMapStore();
 
-    const peerRef = useRef<Peer | null>(null);
-    const connectionsRef = useRef<DataConnection[]>([]);
-    const activeHostConnectionRef = useRef<DataConnection | null>(null);
-    const permissionTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
+    // --- Helpers using Globals ---
 
-    const storeRef = useRef({ image, imageSize, pins, lines });
-    useEffect(() => {
-        storeRef.current = { image, imageSize, pins, lines };
-    }, [image, imageSize, pins, lines]);
+    const updateGuestList = useCallback(() => {
+        const list: GuestInfo[] = globalConnections.map(conn => ({
+            id: conn.peer,
+            label: `Guest ${conn.peer.substring(0, 4)}`,
+            hasPermission: !!globalPermissionTimers[conn.peer],
+            permissionExpiresAt: undefined
+        }));
+        setGuestList(list);
+    }, []); // No dependencies needed as it checks globals
 
-    // Handle Incoming Data
     const handleDataPacket = (packet: P2PPacket, conn: DataConnection) => {
         if (packet.type !== 'CURSOR_MOVE') {
-            // console.debug('Received Packet:', packet.type, packet.payload);
+            // console.debug('Received Packet:', packet.type);
         }
 
         switch (packet.type) {
@@ -48,21 +54,19 @@ export const usePeer = () => {
                     imageSize: payload.imageSize,
                     pins: payload.pins,
                     lines: [],
-                    hostSettings: payload.hostSettings // Added fix
+                    hostSettings: payload.hostSettings
                 });
                 break;
             }
             case 'SYNC_PINS': {
                 const payload = packet.payload as SyncPinsPayload;
-                // Only update pins, keep image
                 importData({
                     image: useMapStore.getState().image,
                     imageSize: useMapStore.getState().imageSize,
                     pins: payload.pins,
                     lines: useMapStore.getState().lines,
-                    // Preserve existing settings if not synced here
                     hostSettings: useMapStore.getState().hostSettings
-                });
+                }, false);
                 break;
             }
             case 'SYNC_LINES': {
@@ -70,31 +74,22 @@ export const usePeer = () => {
                 setLines(payload.lines);
                 break;
             }
-            case 'SYNC_SETTINGS': { // Added
+            case 'SYNC_SETTINGS': {
                 const payload = packet.payload as SyncSettingsPayload;
                 useMapStore.getState().setHostSettings(payload.hostSettings);
                 break;
             }
             case 'REQUEST_OP': {
                 const payload = packet.payload as RequestOpPayload;
-                // Auto-approve for now if not protecting (or check permission logic later)
-                // For now, Host just applies it.
-                // In future, check if Guest has permission?
-                // The prompt says "Guest requests... Host approves/ignores".
-                // Actually the requirement is "Guest requests PERMISSION". Once granted, they can edit.
-                // So here we should check if this specific connection HAS permission.
-                // But for simplicity, we assume if they sent REQUEST_OP, they MIGHT override or we apply it.
-                // Wait, if permission revoked, Host should ignore OP requests?
-                // Proper logic: Check if guest is in "authorized" list or timer active.
-                // For simplest "MVP+": Host applies all OPs. Permission logic is on Guest side (UI disabled).
-                // BUT, malicious guest could send OPs. 
-                // Let's rely on Guest UI for now, as implemented in Phase 4.
 
-                if (payload.action === 'ADD_PIN' && payload.pin) addPin(payload.pin);
-                if (payload.action === 'UPDATE_PIN' && payload.pin) updatePin(payload.pin.id, payload.pin);
-                if (payload.action === 'DELETE_PIN' && payload.pinId) removePin(payload.pinId);
-                if (payload.action === 'ADD_LINE' && payload.line) addLine(payload.line);
-                if (payload.action === 'UNDO_LINE') undoLine();
+                // HOST Logic: Apply the operation requested by Guest
+                // (Assuming Host trust for MVP, or we can check permission here)
+
+                if (payload.action === 'ADD_PIN' && payload.pin) addPin(payload.pin, true);
+                if (payload.action === 'UPDATE_PIN' && payload.pin) updatePin(payload.pin.id, payload.pin, true);
+                if (payload.action === 'DELETE_PIN' && payload.pinId) removePin(payload.pinId, true);
+                if (payload.action === 'ADD_LINE' && payload.line) addLine(payload.line, true);
+                if (payload.action === 'UNDO_LINE') undoLine(true);
                 break;
             }
             case 'REQUEST_PERMISSION': {
@@ -142,7 +137,6 @@ export const usePeer = () => {
             case 'PERMISSION_DENIED': {
                 const payload = packet.payload as PermissionDeniedPayload;
                 setPermissionStatus('COOLDOWN');
-                // Calculate cooldown end time relative to now
                 const cooldownEnd = Date.now() + payload.cooldown * 1000;
                 setPermissionExpiresAt(cooldownEnd);
                 toast.error(`リクエストが拒否されました。${payload.cooldown}秒後に再申請可能です。`);
@@ -156,40 +150,33 @@ export const usePeer = () => {
         }
     };
 
-    const updateGuestList = useCallback(() => {
-        const list: GuestInfo[] = connectionsRef.current.map(conn => ({
-            id: conn.peer,
-            label: `Guest ${conn.peer.substring(0, 4)}`,
-            hasPermission: !!permissionTimersRef.current[conn.peer],
-            permissionExpiresAt: undefined // Could track if needed
-        }));
-        setGuestList(list);
-    }, [setGuestList]);
-
     const handleIncomingConnection = (conn: DataConnection) => {
-        // console.debug('Incoming connection:', conn.peer);
-        connectionsRef.current.push(conn);
-        setConnectedGuests(prev => prev + 1);
+        if (!globalConnections.includes(conn)) {
+            globalConnections.push(conn);
+
+            // Auto-Assign Host Role if not already set
+            if (useMapStore.getState().role !== 'HOST') {
+                setRole('HOST');
+            }
+        }
+        setConnectedGuests(globalConnections.length); // Update UI
         updateGuestList();
 
         conn.on('open', () => {
-            // console.debug('Connection opened:', conn.peer);
-
-            // Sync Initial State
-            const { image, imageSize, pins } = storeRef.current;
+            // Initial Sync
+            const state = useMapStore.getState();
             const fullSync: P2PPacket = {
                 type: 'SYNC_FULL',
                 payload: {
-                    image,
-                    imageSize,
-                    pins,
-                    hostSettings: useMapStore.getState().hostSettings // Added
+                    image: state.image,
+                    imageSize: state.imageSize,
+                    pins: state.pins,
+                    hostSettings: state.hostSettings
                 }
             };
             conn.send(fullSync);
 
-            // Sync Lines
-            const lines = storeRef.current.lines;
+            const lines = state.lines;
             const lineSync: P2PPacket = {
                 type: 'SYNC_LINES',
                 payload: { lines }
@@ -203,27 +190,33 @@ export const usePeer = () => {
 
         conn.on('close', () => {
             console.log('Guest disconnected:', conn.peer);
-            connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
+            globalConnections = globalConnections.filter(c => c !== conn);
+            setConnectedGuests(globalConnections.length);
 
-            if (permissionTimersRef.current[conn.peer]) {
-                clearTimeout(permissionTimersRef.current[conn.peer]);
-                delete permissionTimersRef.current[conn.peer];
+            if (globalPermissionTimers[conn.peer]) {
+                clearTimeout(globalPermissionTimers[conn.peer]);
+                delete globalPermissionTimers[conn.peer];
             }
             updateGuestList();
-            setConnectedGuests(prev => Math.max(0, prev - 1));
         });
     };
 
+    // --- Peer Initialization ---
     const initializePeer = useCallback(() => {
-        if (peerRef.current) return;
+        if (globalPeer) {
+            setPeerId(globalPeer.id);
+            setConnectedGuests(globalConnections.length);
+            updateGuestList();
+            return;
+        }
 
         import('peerjs').then(({ default: Peer }) => {
             const peer = new Peer();
+            globalPeer = peer;
 
             peer.on('open', (id) => {
                 console.log('My Peer ID:', id);
                 setPeerId(id);
-                peerRef.current = peer;
             });
 
             peer.on('connection', (conn) => {
@@ -236,9 +229,8 @@ export const usePeer = () => {
             });
         });
     }, [updateGuestList]);
-    // updateGuestList dependency is okay if wrapped in useCallback, 
-    // but updateGuestList uses connectionsRef which is stable. 
-    // Ideally updateGuestList should be useCallback-ed.
+
+    // --- Actions using Globals ---
 
     const grantPermission = (conn: DataConnection) => {
         const durationSec = useMapStore.getState().hostSettings.permissionDuration;
@@ -248,10 +240,10 @@ export const usePeer = () => {
         conn.send(packet);
         toast.success(`Guest ${conn.peer.substring(0, 4)}... に編集権限を付与しました (${durationSec}秒)`);
 
-        if (permissionTimersRef.current[conn.peer]) {
-            clearTimeout(permissionTimersRef.current[conn.peer]);
+        if (globalPermissionTimers[conn.peer]) {
+            clearTimeout(globalPermissionTimers[conn.peer]);
         }
-        permissionTimersRef.current[conn.peer] = setTimeout(() => {
+        globalPermissionTimers[conn.peer] = setTimeout(() => {
             revokePermissionInternal(conn);
         }, durationSec * 1000);
 
@@ -263,21 +255,20 @@ export const usePeer = () => {
         const payload: PermissionDeniedPayload = { cooldown };
         const packet: P2PPacket = { type: 'PERMISSION_DENIED', payload };
         conn.send(packet);
-        // console.debug(`Permission denied for ${conn.peer}, cooldown: ${cooldown}s`);
     };
 
     const revokePermissionInternal = (conn: DataConnection) => {
         const packet: P2PPacket = { type: 'PERMISSION_REVOKED' };
         conn.send(packet);
-        if (permissionTimersRef.current[conn.peer]) {
-            clearTimeout(permissionTimersRef.current[conn.peer]);
-            delete permissionTimersRef.current[conn.peer];
+        if (globalPermissionTimers[conn.peer]) {
+            clearTimeout(globalPermissionTimers[conn.peer]);
+            delete globalPermissionTimers[conn.peer];
         }
         updateGuestList();
     };
 
     const revokePermission = (guestPeerId: string) => {
-        const conn = connectionsRef.current.find(c => c.peer === guestPeerId);
+        const conn = globalConnections.find(c => c.peer === guestPeerId);
         if (conn) {
             revokePermissionInternal(conn);
             toast.info(`Guest ${guestPeerId.substring(0, 4)}... の権限を剥奪しました`);
@@ -285,21 +276,21 @@ export const usePeer = () => {
     };
 
     const connectToHost = useCallback((hostId: string) => {
-        if (!peerRef.current) return;
+        if (!globalPeer) return;
 
         setConnectionState('Connecting...');
 
-        const conn = peerRef.current.connect(hostId);
-        connectionsRef.current = [conn];
+        const conn = globalPeer.connect(hostId);
+        globalConnections = [conn]; // Guest only has 1 relevant connection usually
 
         conn.on('open', () => {
             console.log('Connected to Host:', hostId);
             setConnectionState('Connected');
 
-            // Fix: Set active connection
-            activeHostConnectionRef.current = conn;
-            if (!connectionsRef.current.includes(conn)) {
-                connectionsRef.current = [conn];
+            globalActiveHostConnection = conn;
+            // Ensure unique in list if needed, but guest usually relies on activeHostConnection
+            if (!globalConnections.includes(conn)) {
+                globalConnections.push(conn);
             }
             setRole('GUEST');
         });
@@ -315,141 +306,176 @@ export const usePeer = () => {
             setPermissionStatus('NONE');
             setPermissionExpiresAt(null);
 
-            activeHostConnectionRef.current = null;
-            connectionsRef.current = [];
+            globalActiveHostConnection = null;
+            globalConnections = [];
         });
 
         conn.on('error', (err) => {
             console.error('Connection error:', err);
             setConnectionState('Error');
-            activeHostConnectionRef.current = null;
-            connectionsRef.current = [];
+            globalActiveHostConnection = null;
+            globalConnections = [];
         });
 
     }, [setRole, setPermissionStatus, setPermissionExpiresAt]);
 
     const requestAction = useCallback((action: 'ADD_PIN' | 'UPDATE_PIN' | 'DELETE_PIN' | 'REQUEST_PERMISSION' | 'ADD_LINE' | 'UNDO_LINE', data?: any) => {
-        let conn = activeHostConnectionRef.current;
-        if (!conn || !conn.open) {
-            const fallback = connectionsRef.current.find(c => c.open);
-            if (fallback) {
-                console.warn('activeHostConnectionRef failed, using fallback connection');
-                conn = fallback;
-            }
+        const { role } = useMapStore.getState();
+
+        // 1. Create Packet (Common)
+        let packet: P2PPacket;
+
+        if (action === 'REQUEST_PERMISSION') {
+            useMapStore.getState().setPermissionStatus('REQUESTING');
+            packet = { type: 'REQUEST_PERMISSION' };
+
+            setTimeout(() => {
+                const currentStatus = useMapStore.getState().permissionStatus;
+                if (currentStatus === 'REQUESTING') {
+                    useMapStore.getState().setPermissionStatus('NONE');
+                    toast.error('ホストからの応答がありませんでした');
+                }
+            }, 15000);
+        } else {
+            let payload: RequestOpPayload = { action: action as any };
+
+            if (action === 'DELETE_PIN') payload.pinId = data;
+            else if (action === 'ADD_PIN' || action === 'UPDATE_PIN') payload.pin = data;
+            else if (action === 'ADD_LINE') payload.line = data;
+            else if (action === 'UNDO_LINE') { /* no data */ }
+
+            packet = { type: 'REQUEST_OP', payload };
         }
 
-        // console.debug('requestAction called:', action, 'Connection Open:', conn?.open);
-
-        // Optimistic Updates Removed (Moved to mapStore.ts to fix recursion)
-
-        if (conn && conn.open) {
-            let packet: P2PPacket;
-            if (action === 'REQUEST_PERMISSION') {
-                setPermissionStatus('REQUESTING');
-                packet = { type: 'REQUEST_PERMISSION' };
-
-                // Timeout safety net: 15 seconds
-                setTimeout(() => {
-                    const currentStatus = useMapStore.getState().permissionStatus;
-                    if (currentStatus === 'REQUESTING') {
-                        setPermissionStatus('NONE');
-                        toast.error('ホストからの応答がありませんでした');
-                    }
-                }, 15000);
-            } else {
-                let payload: RequestOpPayload = { action: action as any };
-
-                if (action === 'DELETE_PIN') payload.pinId = data;
-                else if (action === 'ADD_PIN' || action === 'UPDATE_PIN') payload.pin = data;
-                else if (action === 'ADD_LINE') payload.line = data;
-                else if (action === 'UNDO_LINE') { /* no data */ }
-
-                packet = {
-                    type: 'REQUEST_OP',
-                    payload
-                };
+        if (role === 'HOST') {
+            if (action !== 'REQUEST_PERMISSION') {
+                // Broadcast using globalConnections
+                globalConnections.forEach(c => {
+                    if (c.open) c.send(packet);
+                });
             }
-            conn.send(packet);
-            // console.debug('Sent packet:', packet);
         } else {
-            console.error('No valid connection to host to send request.');
-            toast.error('ホストとの接続が切れています。リロードしてください。');
+            // Guest: Send to Host
+            let conn = globalActiveHostConnection;
+            if (!conn || !conn.open) {
+                const fallback = globalConnections.find(c => c.open);
+                if (fallback) conn = fallback;
+            }
+
+            if (conn && conn.open) {
+                conn.send(packet);
+            } else {
+                console.error('No valid connection to host to send request.');
+                toast.error('ホストとの接続が切れています。リロードしてください。');
+            }
         }
     }, [setPermissionStatus]);
 
-    // Guest sending Cursor
     const sendCursor = useCallback(
         throttle((cursor: CursorData) => {
-            const conn = activeHostConnectionRef.current || connectionsRef.current[0];
+            const myId = globalPeer?.id;
+            if (!myId) return;
+
+            // Use Global Connection
+            const conn = globalActiveHostConnection || globalConnections[0];
             if (conn && conn.open) {
-                const packet: P2PPacket = { type: 'CURSOR_MOVE', payload: cursor };
+                const payload = { ...cursor, userId: myId };
+                const packet: P2PPacket = { type: 'CURSOR_MOVE', payload };
                 conn.send(packet);
             }
         }, 50),
         []
     );
 
-    // Register send functions to store (Dependency Injection)
-    useEffect(() => {
-        setSendRequest(requestAction);
-        setSendCursor(sendCursor);
-    }, [setSendRequest, requestAction, setSendCursor, sendCursor]);
-
-    // Sync Settings Hook
-    useEffect(() => {
-        if (role !== 'HOST') return;
-        if (connectionsRef.current.length === 0) return;
-
-        // Broadcast settings
-        const packet: P2PPacket = {
-            type: 'SYNC_SETTINGS',
-            payload: { hostSettings }
-        };
-
-        connectionsRef.current.forEach(conn => {
-            if (conn.open) conn.send(packet);
-        });
-    }, [hostSettings, role]);
-
-    // Sync Hooks
-    useEffect(() => {
-        if (role !== 'HOST') return;
-        if (connectionsRef.current.length === 0) return;
-
-        // Broadcast to all
-        const broadcast = (packet: P2PPacket) => {
-            connectionsRef.current.forEach(conn => {
-                if (conn.open) conn.send(packet);
-            });
-        };
-
-        const packet: P2PPacket = { type: 'SYNC_PINS', payload: { pins } };
-        broadcast(packet);
-    }, [pins, role]);
-
-    useEffect(() => {
-        if (role !== 'HOST') return;
-        if (connectionsRef.current.length === 0) return;
-
-        const broadcast = (packet: P2PPacket) => {
-            connectionsRef.current.forEach(conn => {
-                if (conn.open) conn.send(packet);
-            });
-        };
-
-        const packet: P2PPacket = { type: 'SYNC_LINES', payload: { lines } };
-        broadcast(packet);
-    }, [lines, role]);
-
-    // Cursor Broadcast (Host)
     const broadcastCursor = useCallback((cursor: CursorData) => {
-        connectionsRef.current.forEach(conn => {
+        globalConnections.forEach(conn => {
             if (conn.open) {
                 const packet: P2PPacket = { type: 'CURSOR_MOVE', payload: cursor };
                 conn.send(packet);
             }
         });
     }, []);
+
+    // --- Sync Hooks (Host Broadcast) ---
+    // These need to watch store changes and broadcast using globals
+    // We can't rely on 'global' vars as deps, so checking them inside effect is fine.
+
+    // Register Dep Injection
+    useEffect(() => {
+        setSendRequest(requestAction);
+        setSendCursor(sendCursor);
+    }, [setSendRequest, requestAction, setSendCursor, sendCursor]);
+
+    // Sync Settings
+    useEffect(() => {
+        if (useMapStore.getState().role !== 'HOST') return;
+
+        const packet: P2PPacket = {
+            type: 'SYNC_SETTINGS',
+            payload: { hostSettings }
+        };
+
+        globalConnections.forEach(conn => {
+            if (conn.open) conn.send(packet);
+        });
+    }, [hostSettings]); // Removed role dep to avoid re-run on role change glitch, but safest to check role inside
+
+    // Sync Image (Added Phase 32)
+    const { image: currentImage, imageSize: currentImageSize } = useMapStore();
+    useEffect(() => {
+        if (useMapStore.getState().role !== 'HOST') return;
+
+        // Debounce or just send? Image change is rare.
+        // Construct SYNC_FULL or just SYNC image? SYNC_FULL is easiest for now.
+        // But SYNC_FULL currently resets Pins/Lines in importData logic if valid.
+        // Actually Phase 32 plan says: SYNC_FULL with current state.
+
+        const state = useMapStore.getState();
+        const packet: P2PPacket = {
+            type: 'SYNC_FULL',
+            payload: {
+                image: state.image,
+                imageSize: state.imageSize,
+                pins: state.pins,
+                hostSettings: state.hostSettings
+            }
+        };
+
+        globalConnections.forEach(conn => {
+            if (conn.open) conn.send(packet);
+        });
+    }, [currentImage, currentImageSize]);
+
+    // Sync Pins
+    const { pins: currentPins } = useMapStore();
+    useEffect(() => {
+        if (useMapStore.getState().role !== 'HOST') return;
+
+        const packet: P2PPacket = { type: 'SYNC_PINS', payload: { pins: currentPins } };
+        globalConnections.forEach(conn => {
+            if (conn.open) conn.send(packet);
+        });
+    }, [currentPins]);
+
+    // Sync Lines
+    const { lines: currentLines } = useMapStore();
+    useEffect(() => {
+        if (useMapStore.getState().role !== 'HOST') return;
+
+        const packet: P2PPacket = { type: 'SYNC_LINES', payload: { lines: currentLines } };
+        globalConnections.forEach(conn => {
+            if (conn.open) conn.send(packet);
+        });
+    }, [currentLines]);
+
+
+    // Setup UI Sync on Mount
+    useEffect(() => {
+        if (globalPeer?.id) setPeerId(globalPeer.id);
+        if (globalConnections.length > 0) setConnectedGuests(globalConnections.length);
+        if (globalActiveHostConnection?.open) setConnectionState('Connected');
+        updateGuestList();
+    }, [updateGuestList]);
 
     return {
         initializePeer,

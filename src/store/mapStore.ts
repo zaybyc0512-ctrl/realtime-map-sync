@@ -53,16 +53,16 @@ interface MapState {
   setImage: (image: string, size: ImageSize) => void;
   updateStage: (stage: Partial<StageState>) => void;
 
-  addPin: (pin: Pin) => void;
-  removePin: (id: string) => void;
-  updatePin: (id: string, updates: Partial<Pin>) => void;
+  addPin: (pin: Pin, fromSync?: boolean) => void;
+  removePin: (id: string, fromSync?: boolean) => void;
+  updatePin: (id: string, updates: Partial<Pin>, fromSync?: boolean) => void;
 
   togglePin: (id: string) => void;
   closePin: (id: string) => void;
   openPin: (id: string) => void;
 
-  addLine: (line: LineData) => void;
-  undoLine: () => void;
+  addLine: (line: LineData, fromSync?: boolean) => void;
+  undoLine: (fromSync?: boolean) => void;
   setLines: (lines: LineData[]) => void;
   updateCursor: (cursor: CursorData) => void;
 
@@ -81,7 +81,7 @@ interface MapState {
   setSendRequest: (fn: (action: 'ADD_PIN' | 'UPDATE_PIN' | 'DELETE_PIN' | 'REQUEST_PERMISSION' | 'ADD_LINE' | 'UNDO_LINE', data?: any) => void) => void;
   setSendCursor: (fn: (data: CursorData) => void) => void; // Added for Singleton fix
 
-  importData: (data: { image: string | null; imageSize: ImageSize | null; pins: Pin[]; lines: LineData[]; hostSettings?: any }) => void; // Updated
+  importData: (data: { image: string | null; imageSize: ImageSize | null; pins: Pin[]; lines: LineData[]; hostSettings?: any }, resetView?: boolean) => void; // Updated
 }
 
 const storage = {
@@ -120,7 +120,14 @@ export const useMapStore = create<MapState>()(
       sendRequest: () => { },
       sendCursor: () => { }, // Added
 
-      setImage: (image, size) => set({ image, imageSize: size, pins: [], lines: [], stage: { scale: 1, x: 0, y: 0 } }),
+      setImage: (image, size) => set({
+        image,
+        imageSize: size,
+        pins: [],
+        lines: [],
+        cursors: {},
+        stage: { scale: 1, x: 0, y: 0 }
+      }),
 
       updateStage: (newStage) =>
         set((state) => ({
@@ -129,8 +136,11 @@ export const useMapStore = create<MapState>()(
 
       // ... (middle parts unchanged, we need to correctly target this block)
 
-      addPin: (pin) => {
+      addPin: (pin, fromSync = false) => {
         const state = get();
+        // Duplicate check (Idempotency)
+        if (state.pins.some(p => p.id === pin.id)) return;
+
         // ... Check role ...
         // 1. Optimistic Update
         set((state) => ({
@@ -138,28 +148,32 @@ export const useMapStore = create<MapState>()(
           openPinIds: [...state.openPinIds, pin.id]
         }));
 
-        // 2. Send Request if Guest
+        // 2. Broadcast / Send Request
         const { role, sendRequest } = get();
-        if (role === 'GUEST') {
-          sendRequest('ADD_PIN', pin);
+        if (role === 'HOST') {
+          sendRequest('ADD_PIN', pin); // Host always broadcasts
+        } else if (role === 'GUEST' && !fromSync) {
+          sendRequest('ADD_PIN', pin); // Guest sends only own actions
         }
       },
 
-      removePin: (id) => {
+      removePin: (id, fromSync = false) => {
         // 1. Optimistic Update
         set((state) => ({
           pins: state.pins.filter((p) => p.id !== id),
           openPinIds: state.openPinIds.filter((pid) => pid !== id)
         }));
 
-        // 2. Send Request if Guest
+        // 2. Broadcast / Send Request
         const { role, sendRequest } = get();
-        if (role === 'GUEST') {
+        if (role === 'HOST') {
+          sendRequest('DELETE_PIN', id);
+        } else if (role === 'GUEST' && !fromSync) {
           sendRequest('DELETE_PIN', id);
         }
       },
 
-      updatePin: (id, updates) => {
+      updatePin: (id, updates, fromSync = false) => {
         const state = get();
         const targetPin = state.pins.find(p => p.id === id);
         if (!targetPin) return;
@@ -171,9 +185,12 @@ export const useMapStore = create<MapState>()(
           pins: state.pins.map((p) => p.id === id ? updatedPin : p)
         }));
 
-        // 2. Send Request if Guest
-        if (state.role === 'GUEST') {
-          state.sendRequest('UPDATE_PIN', updatedPin);
+        // 2. Broadcast / Send Request
+        const { role, sendRequest } = get();
+        if (role === 'HOST') {
+          sendRequest('UPDATE_PIN', updatedPin);
+        } else if (role === 'GUEST' && !fromSync) {
+          sendRequest('UPDATE_PIN', updatedPin);
         }
       },
 
@@ -195,27 +212,35 @@ export const useMapStore = create<MapState>()(
         return { openPinIds: [...state.openPinIds, id] };
       }),
 
-      addLine: (line) => {
+      addLine: (line, fromSync = false) => {
+        const state = get();
+        // Duplicate check
+        if (state.lines.some(l => l.id === line.id)) return;
+
         // 1. Optimistic Update
         set((state) => ({ lines: [...state.lines, line] }));
 
-        // 2. Send Request if Guest
+        // 2. Broadcast / Send Request
         const { role, sendRequest } = get();
-        if (role === 'GUEST') {
+        if (role === 'HOST') {
+          sendRequest('ADD_LINE', line);
+        } else if (role === 'GUEST' && !fromSync) {
           sendRequest('ADD_LINE', line);
         }
       },
 
-      undoLine: () => {
+      undoLine: (fromSync = false) => {
         // 1. Optimistic Update
         set((state) => {
           if (state.lines.length === 0) return {};
           return { lines: state.lines.slice(0, -1) };
         });
 
-        // 2. Send Request if Guest
+        // 2. Broadcast / Send Request
         const { role, sendRequest } = get();
-        if (role === 'GUEST') {
+        if (role === 'HOST') {
+          sendRequest('UNDO_LINE');
+        } else if (role === 'GUEST' && !fromSync) {
           sendRequest('UNDO_LINE');
         }
       },
@@ -251,14 +276,23 @@ export const useMapStore = create<MapState>()(
         hostSettings: { ...state.hostSettings, ...updates }
       })),
 
-      clearMap: () => set({ image: null, imageSize: null, pins: [], lines: [], stage: { scale: 1, x: 0, y: 0 }, openPinIds: [] }),
+      clearMap: () => set({
+        image: null,
+        imageSize: null,
+        pins: [],
+        lines: [],
+        cursors: {},
+        stage: { scale: 1, x: 0, y: 0 },
+        openPinIds: []
+      }),
 
-      importData: (data) => set((state) => ({
+      importData: (data, resetView = true) => set((state) => ({
         image: data.image,
         imageSize: data.imageSize,
         pins: data.pins,
         lines: data.lines || [],
-        stage: { scale: 1, x: 0, y: 0 },
+        cursors: {}, // Reset cursors on import to prevent ghosting
+        stage: resetView ? { scale: 1, x: 0, y: 0 } : state.stage,
         hostSettings: data.hostSettings ? data.hostSettings : state.hostSettings // Merge settings if present
       })),
 

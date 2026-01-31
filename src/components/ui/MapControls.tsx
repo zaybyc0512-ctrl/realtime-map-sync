@@ -212,7 +212,7 @@ export const MapControls = () => {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={undoLine}
+                        onClick={() => undoLine()}
                         disabled={!canEdit}
                         title="元に戻す"
                         className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]"
