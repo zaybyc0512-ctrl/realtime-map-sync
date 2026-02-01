@@ -15,6 +15,7 @@ let globalPeer: Peer | null = null;
 let globalConnections: DataConnection[] = [];
 let globalActiveHostConnection: DataConnection | null = null;
 let globalPermissionTimers: Record<string, NodeJS.Timeout> = {};
+let lastConnectedHostId: string | null = null; // Phase 39: Track last host for reconnection
 
 export const usePeer = () => {
     // UI State (synced from global state)
@@ -286,6 +287,7 @@ export const usePeer = () => {
         conn.on('open', () => {
             console.log('Connected to Host:', hostId);
             setConnectionState('Connected');
+            lastConnectedHostId = hostId; // Phase 39: Save for reconnection
 
             globalActiveHostConnection = conn;
             // Ensure unique in list if needed, but guest usually relies on activeHostConnection
@@ -475,7 +477,34 @@ export const usePeer = () => {
         if (globalConnections.length > 0) setConnectedGuests(globalConnections.length);
         if (globalActiveHostConnection?.open) setConnectionState('Connected');
         updateGuestList();
+        updateGuestList();
     }, [updateGuestList]);
+
+    // Phase 39: Network Stability (Background Reconnect)
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                console.log('App became visible, checking connection...');
+
+                // 1. Check PeerServer Connection
+                if (globalPeer && globalPeer.disconnected) {
+                    console.log('Peer disconnected, reconnecting...');
+                    globalPeer.reconnect();
+                }
+
+                // 2. Check Host Connection (Guest Mode)
+                if (lastConnectedHostId && (!globalActiveHostConnection || !globalActiveHostConnection.open)) {
+                    console.log('Host connection lost, reconnecting to:', lastConnectedHostId);
+                    connectToHost(lastConnectedHostId);
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [connectToHost]);
 
     return {
         initializePeer,

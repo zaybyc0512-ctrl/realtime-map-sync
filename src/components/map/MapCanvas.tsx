@@ -26,7 +26,28 @@ export const MapCanvas = () => {
     } = useMapStore();
 
     const [img] = useImage(imageUrl || '');
+
     const stageRef = useRef<Konva.Stage>(null);
+
+    // Phase 37: Touch Support Refs
+    const lastCenter = useRef<{ x: number; y: number } | null>(null);
+    const lastDist = useRef<number>(0);
+    // Phase 38/39: Long Press Refs
+    const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+    const isLongPress = useRef(false);
+    const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+
+    // Helpers
+    const getDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
+        return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    };
+
+    const getCenter = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
+        return {
+            x: (p1.x + p2.x) / 2,
+            y: (p1.y + p2.y) / 2,
+        };
+    };
 
     // Export Logic
     useEffect(() => {
@@ -212,6 +233,189 @@ export const MapCanvas = () => {
         }
     };
 
+    // Phase 37/38/39: Touch Handlers
+    const handleTouchStart = (e: Konva.KonvaEventObject<TouchEvent>) => {
+        e.evt.preventDefault();
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        const touch1 = e.evt.touches[0];
+        const touch2 = e.evt.touches[1];
+
+        if (touch1 && touch2) {
+            // Pinch Zoom Start
+            if (stage.isDragging()) {
+                stage.stopDrag();
+            }
+            if (currentLine) {
+                setCurrentLine(null); // Cancel line drawing if pinch starts
+            }
+            // Cancel Long Press on Pinch
+            if (longPressTimer.current) {
+                clearTimeout(longPressTimer.current);
+                longPressTimer.current = null;
+            }
+
+            const p1 = { x: touch1.clientX, y: touch1.clientY };
+            const p2 = { x: touch2.clientX, y: touch2.clientY };
+
+            lastCenter.current = getCenter(p1, p2);
+            lastDist.current = getDistance(p1, p2);
+        } else {
+            // Single Touch
+
+            // Phase 38/39: Start Long Press Timer (Only in Pointer Mode)
+            if (toolMode === 'pointer') {
+                touchStartPos.current = { x: touch1.clientX, y: touch1.clientY };
+                isLongPress.current = false;
+
+                longPressTimer.current = setTimeout(() => {
+                    isLongPress.current = true;
+                    if (navigator.vibrate) navigator.vibrate(50);
+
+                    // Add Pin Logic
+                    if (!imageSize || !stage) return;
+                    const transform = stage.getAbsoluteTransform().copy().invert();
+                    const pos = stage.getPointerPosition();
+                    if (!pos) return;
+
+                    const localPos = transform.point(pos);
+                    const x = localPos.x / imageSize.width;
+                    const y = localPos.y / imageSize.height;
+
+                    const newPin = {
+                        id: uuidv4(),
+                        x,
+                        y,
+                        color: '#ef4444',
+                    };
+                    addPin(newPin);
+                }, 500); // 500ms
+            }
+
+            // If Pen Mode, start drawing
+            if (toolMode === 'pen') {
+                const pos = stage.getRelativePointerPosition();
+                if (!pos) return;
+
+                // Permission check
+                const currentRole = useMapStore.getState().role;
+                const currentPermission = useMapStore.getState().permissionStatus;
+                const currentSettings = useMapStore.getState().hostSettings;
+                if (currentRole === 'GUEST' && currentPermission !== 'GRANTED' && currentSettings.guestEditMode !== 'FREE') return;
+
+                setCurrentLine({
+                    id: uuidv4(),
+                    points: [pos.x, pos.y, pos.x, pos.y],
+                    color: penColor,
+                    strokeWidth: penWidth,
+                });
+            }
+        }
+    };
+
+    const handleTouchMove = (e: Konva.KonvaEventObject<TouchEvent>) => {
+        e.evt.preventDefault();
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        const touch1 = e.evt.touches[0];
+        const touch2 = e.evt.touches[1];
+
+        // Phase 38/39: Cancel Long Press if moved too far
+        if (longPressTimer.current && touchStartPos.current && touch1) {
+            const dx = touch1.clientX - touchStartPos.current.x;
+            const dy = touch1.clientY - touchStartPos.current.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 15) { // 15px tolerance
+                clearTimeout(longPressTimer.current);
+                longPressTimer.current = null;
+            }
+        }
+
+        if (touch1 && touch2) {
+            // Pinch Zoom Logic
+            if (!lastCenter.current || lastDist.current === 0) return;
+
+            const p1 = { x: touch1.clientX, y: touch1.clientY };
+            const p2 = { x: touch2.clientX, y: touch2.clientY };
+
+            const newCenter = getCenter(p1, p2);
+            const newDist = getDistance(p1, p2);
+
+            const pointTo = {
+                x: (newCenter.x - stage.x()) / stage.scaleX(),
+                y: (newCenter.y - stage.y()) / stage.scaleX(),
+            };
+
+            const scaleBy = newDist / lastDist.current;
+            const newScale = stage.scaleX() * scaleBy;
+
+            stage.scale({ x: newScale, y: newScale });
+
+            const dx = newCenter.x - lastCenter.current.x;
+            const dy = newCenter.y - lastCenter.current.y;
+
+            const newPos = {
+                x: newCenter.x - pointTo.x * newScale + dx,
+                y: newCenter.y - pointTo.y * newScale + dy,
+            };
+
+            stage.position(newPos);
+            updateStage({ scale: newScale, x: newPos.x, y: newPos.y });
+
+            lastDist.current = newDist; // Update for smooth zoom
+            lastCenter.current = newCenter;
+        } else if (touch1 && !touch2) {
+            // Single Touch Move
+            if (toolMode === 'pen' && currentLine) {
+                const point = stage.getRelativePointerPosition();
+                if (!point) return;
+                const newPoints = currentLine.points.concat([point.x, point.y]);
+                setCurrentLine({ ...currentLine, points: newPoints });
+            }
+
+            // Update cursor pos for broadcast
+            const pos = stage.getRelativePointerPosition();
+            if (pos && imageSize) {
+                const { role, permissionStatus, hostSettings, sendCursor } = useMapStore.getState();
+                if (role !== 'NONE' && (role === 'HOST' || permissionStatus === 'GRANTED' || hostSettings.guestEditMode === 'FREE')) {
+                    const cursorData = {
+                        userId: 'me',
+                        x: pos.x / imageSize.width,
+                        y: pos.y / imageSize.height,
+                        userName: role === 'HOST' ? 'Host' : 'Guest',
+                        color: '#ff0000',
+                    };
+                    sendCursor(cursorData);
+                }
+            }
+        }
+    };
+
+    const handleTouchEnd = (e: Konva.KonvaEventObject<TouchEvent>) => {
+        // Reset Pinch
+        lastCenter.current = null;
+        lastDist.current = 0;
+
+        // Phase 38: Cancel Long Press
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+        touchStartPos.current = null;
+
+        // Finish Line
+        if (currentLine) {
+            addLine(currentLine);
+            setCurrentLine(null);
+        }
+
+        // Sync final stage pos if just finished panning (draggable) or zooming
+        // draggable handles it via dragEnd, but zoom we handled manually.
+        // updateStage called during zoom, so it should be fine.
+    };
+
     if (!imageUrl || !imageSize) {
         return <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">Map not loaded</div>;
     }
@@ -227,6 +431,9 @@ export const MapCanvas = () => {
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
                 onDragEnd={handleDragEnd}
                 onClick={handleStageClick}
                 scaleX={stageState.scale}

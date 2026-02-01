@@ -127,50 +127,61 @@ export const MapControls = () => {
     if (!image) return null;
 
     return (
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
+        <div className="absolute z-10 flex flex-col gap-2 pointer-events-none 
+                        top-4 right-4 items-end 
+                        sm:top-4 sm:right-4 sm:flex-col sm:items-end 
+                        max-sm:top-auto max-sm:bottom-24 max-sm:left-4 max-sm:right-4 max-sm:flex-row max-sm:items-end max-sm:justify-between">
+            {/* Wrapper for Pointer Events: We want clicks to pass through empty space, but buttons consume them.
+                However, pointer-events-none on parent and pointer-events-auto on children is easiest.
+            */}
             {/* Permission Controls (Hide in Free Mode) */}
-            {isGuest && !isFreeMode && (
-                <div className="flex bg-white/90 p-2 rounded-lg shadow-md gap-2 backdrop-blur-sm mb-2">
-                    {permissionStatus === 'GRANTED' ? (
-                        <div className="flex items-center gap-2 text-green-600 font-bold px-2">
-                            <Unlock className="h-4 w-4" />
-                            <span>編集可能</span>
-                            <div className="flex items-center gap-1 bg-green-100 px-2 py-0.5 rounded text-sm">
-                                <Timer className="h-3 w-3" />
-                                {timeLeft}s
+            <div className="pointer-events-auto">
+                {isGuest && !isFreeMode && (
+                    <div className="flex bg-white/90 p-2 rounded-lg shadow-md gap-2 backdrop-blur-sm mb-2 max-sm:mb-0 max-sm:mr-2">
+                        {permissionStatus === 'GRANTED' ? (
+                            <div className="flex items-center gap-2 text-green-600 font-bold px-2">
+                                <Unlock className="h-4 w-4" />
+                                <span className="max-sm:hidden">編集可能</span>
+                                <div className="flex items-center gap-1 bg-green-100 px-2 py-0.5 rounded text-sm">
+                                    <Timer className="h-3 w-3" />
+                                    {timeLeft}s
+                                </div>
                             </div>
-                        </div>
-                    ) : permissionStatus === 'REQUESTING' ? (
-                        <Button variant="secondary" disabled className="gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            申請中...
-                        </Button>
-                    ) : permissionStatus === 'COOLDOWN' ? (
-                        <Button variant="destructive" disabled className="gap-2 bg-red-100 text-red-600 border border-red-200">
-                            <Timer className="h-4 w-4" />
-                            再申請まで {timeLeft}s
-                        </Button>
-                    ) : (
-                        <Button onClick={handleRequestPermission} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
-                            <Lock className="h-4 w-4" />
-                            編集リクエスト
-                        </Button>
-                    )}
-                </div>
-            )}
+                        ) : permissionStatus === 'REQUESTING' ? (
+                            <Button variant="secondary" disabled className="gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                申請中...
+                            </Button>
+                        ) : permissionStatus === 'COOLDOWN' ? (
+                            <Button variant="destructive" disabled className="gap-2 bg-red-100 text-red-600 border border-red-200">
+                                <Timer className="h-4 w-4" />
+                                <span className="max-sm:hidden">再申請まで</span> {timeLeft}s
+                            </Button>
+                        ) : (
+                            <Button onClick={handleRequestPermission} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                                <Lock className="h-4 w-4" />
+                                <span>申請</span>
+                            </Button>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* Free Mode Indicator (Optional, but good for clarity) */}
-            {isGuest && isFreeMode && (
-                <div className="flex bg-green-50 p-2 rounded-lg shadow-md gap-2 backdrop-blur-sm mb-2 border border-green-200">
-                    <div className="flex items-center gap-2 text-green-700 font-bold px-2 text-sm">
-                        <Unlock className="h-4 w-4" />
-                        <span>フリー編集モード</span>
+            <div className="pointer-events-auto">
+                {isGuest && isFreeMode && (
+                    <div className="flex bg-green-50 p-2 rounded-lg shadow-md gap-2 backdrop-blur-sm mb-2 border border-green-200 max-sm:mb-0 max-sm:mr-2">
+                        <div className="flex items-center gap-2 text-green-700 font-bold px-2 text-sm">
+                            <Unlock className="h-4 w-4" />
+                            <span>フリーモード</span>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
 
             {/* Main Controls Container */}
-            <div className="flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-sm rounded-lg shadow-md">
+            <div className="flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-sm rounded-lg shadow-md pointer-events-auto
+                            max-sm:flex-row max-sm:items-center max-sm:w-full max-sm:justify-between max-sm:overflow-x-auto">
 
                 {/* Row 1: Tools */}
                 <div className="flex items-center gap-1">
@@ -179,10 +190,10 @@ export const MapControls = () => {
                         size="sm"
                         onClick={() => setToolMode('pointer')}
                         title="選択/移動モード"
-                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]"
+                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:min-w-[44px] max-sm:min-h-[44px]"
                     >
                         <MousePointer2 className="h-4 w-4" />
-                        <span className="text-[10px]">移動/ピン</span>
+                        <span className="text-[10px] max-sm:hidden">移動/ピン</span>
                     </Button>
 
                     <Button
@@ -191,10 +202,10 @@ export const MapControls = () => {
                         onClick={() => setToolMode('pen')}
                         disabled={!canEdit}
                         title="ペンツール"
-                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]"
+                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:min-w-[44px] max-sm:min-h-[44px]"
                     >
                         <Pen className="h-4 w-4" />
-                        <span className="text-[10px]">ペン</span>
+                        <span className="text-[10px] max-sm:hidden">ペン</span>
                     </Button>
 
                     {/* Fit to Screen */}
@@ -203,10 +214,10 @@ export const MapControls = () => {
                         size="sm"
                         onClick={handleFitToScreen}
                         title="画面に合わせる"
-                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]"
+                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:min-w-[44px] max-sm:min-h-[44px]"
                     >
                         <Maximize className="h-4 w-4" />
-                        <span className="text-[10px]">全体表示</span>
+                        <span className="text-[10px] max-sm:hidden">全体</span>
                     </Button>
 
                     <Button
@@ -215,14 +226,14 @@ export const MapControls = () => {
                         onClick={() => undoLine()}
                         disabled={!canEdit}
                         title="元に戻す"
-                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]"
+                        className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:min-w-[44px] max-sm:min-h-[44px]"
                     >
                         <Undo className="h-4 w-4" />
-                        <span className="text-[10px]">戻す</span>
+                        <span className="text-[10px] max-sm:hidden">戻す</span>
                     </Button>
                 </div>
 
-                <div className="h-px bg-gray-200 w-full" />
+                <div className="h-px bg-gray-200 w-full max-sm:h-full max-sm:w-px max-sm:h-8" />
 
                 {/* Row 2: Style Controls (Context Sensitive) */}
                 {toolMode === 'pen' && (
@@ -265,29 +276,29 @@ export const MapControls = () => {
                     </div>
                 )}
 
-                <div className="h-px bg-gray-200 w-full" />
+                <div className="h-px bg-gray-200 w-full max-sm:w-px max-sm:h-8" />
 
                 {/* Row 3: Actions */}
                 <div className="flex items-center gap-1 justify-center">
-                    <Button variant="ghost" size="sm" onClick={triggerImageExport} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]" title="画像保存">
+                    <Button variant="ghost" size="sm" onClick={triggerImageExport} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:min-w-[44px] max-sm:min-h-[44px]" title="画像保存">
                         <ImageIcon className="h-4 w-4" />
-                        <span className="text-[10px]">画像保存</span>
+                        <span className="text-[10px] max-sm:hidden">保</span>
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={handleExportJSON} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]" title="JSON書き出し">
+                    <Button variant="ghost" size="sm" onClick={handleExportJSON} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:hidden" title="JSON書き出し">
                         <Download className="h-4 w-4" />
-                        <span className="text-[10px]">保存JSON</span>
+                        <span className="text-[10px]">JSON</span>
                     </Button>
 
                     {!isGuest && (
                         <>
-                            <Button variant="ghost" size="sm" onClick={handleImportClick} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem]" title="JSON読み込み">
+                            <Button variant="ghost" size="sm" onClick={handleImportClick} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] max-sm:hidden" title="JSON読み込み">
                                 <Upload className="h-4 w-4" />
                                 <span className="text-[10px]">読込</span>
                             </Button>
 
-                            <Button variant="ghost" size="sm" onClick={handleClear} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] text-red-500 hover:text-red-700 hover:bg-red-50" title="全削除">
+                            <Button variant="ghost" size="sm" onClick={handleClear} className="flex flex-col h-auto py-1 gap-0.5 min-w-[3.5rem] text-red-500 hover:text-red-700 hover:bg-red-50 max-sm:min-w-[44px] max-sm:min-h-[44px]" title="全削除">
                                 <Trash2 className="h-4 w-4" />
-                                <span className="text-[10px]">削除</span>
+                                <span className="text-[10px] max-sm:hidden">削除</span>
                             </Button>
                         </>
                     )}
